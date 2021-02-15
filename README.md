@@ -1,1 +1,1 @@
-# DATA622-Machine_Learning
+This repository houses all codes written for Machine Learning and Big Data.
