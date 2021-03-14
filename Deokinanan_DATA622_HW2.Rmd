@@ -1,0 +1,390 @@
+---
+title: "CUNY SPS DATA 622 - Machine Learning and Big Data"
+author: "Samantha Deokinanan"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+subtitle: 'Spring 2021 - Home Work #2'
+urlcolor: purple
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(error = FALSE, warning = FALSE, message = FALSE, fig.align = "center")
+```
+
+### Problem
+
+We will be working with the `Penguin` dataset again as we did for Homework #1. For this assignment, you may want to drop/ignore the variable `year`. Using the target variable, `Species`, please conduct:
+
+1. Linear Discriminant Analysis  
+  * a. You want to evaluate all the ‘features’ or dependent variables and see what should be in your model. Please comment on your choices.  
+  * b. Just a suggestion: You might want to consider exploring `featurePlot` on the caret package. Basically, you look at each of the features/dependent variables and see how they are different based on species. Simply eye-balling this might give you an idea about which would be strong ‘classifiers’ (aka predictors).  
+  * c. Fit your LDA model using whatever predictor variables you deem appropriate. Feel free to split the data into training and test sets before fitting the model.  
+  * d. Look at the fit statistics/accuracy rates.  
+  
+2. Quadratic Discriminant Analysis  
+  * a. Same steps as above to consider.  
+
+3. Naïve Bayes  
+  * a. Same steps as above to consider.  
+  
+Comment on the models fits / strength / weakness / accuracy for all these three models that you worked with. 
+
+### R Packages
+
+The statistical tool that will be used to facilitate the modeling of the data was `R`. The main packages used for data wrangling, visualization, and graphics were listed below. 
+
+```{r}
+# Required R packages
+library(palmerpenguins)
+library(tidyverse)
+library(kableExtra)
+library(summarytools)
+library(psych)
+library(caret)
+library(MASS)
+library(mice)
+library(dummies)
+library(Boruta)
+library(klaR)
+library(pROC)
+```
+
+### Data Exploration  
+
+The `palmerpenguins` data contains size measurements collected from 2007 - 2009 for three penguin species observed on three islands in the Palmer Archipelago, Antarctica. For more information about this data collection, refer to  [palmerpenguins website.](https://allisonhorst.github.io/palmerpenguins/articles/intro.html)
+
+*Penguins Data Column Definition*
+
+Variable | Description
+----|------
+species | penguin species (Adélie, Chinstrap, and Gentoo)
+island | island in Palmer Archipelago, Antarctica (Biscoe, Dream or Torgersen)
+bill_length_mm | bill length (millimeters)
+bill_depth_mm | bill depth (millimeters)
+flipper_length_mm | flipper length (millimeters)
+body_mass_g | body mass (grams)
+sex | penguin sex (female, male)
+year | year data was collected
+
+```{r}
+# Load dataset
+penguins = penguins
+
+# Number of observations
+ntrobs = dim(penguins)[[1]]
+
+# Converting Year to factor
+penguins$year = as.factor(penguins$year)
+```
+
+From HW#1 (available on [GitHub here](https://github.com/greeneyefirefly/DATA622-Machine_Learning/blob/main/Deokinanan_DATA622_HW2.Rmd)), the data exploration found that the response variable, `species` denotes one of three penguin species, and a majority of the penguins are Adelie (n = 153), followed by Gentoo (n = 124) and Chinstrap (n = 68). The distribution between gender is nearly equally divided among the species but not for their island habitat. 
+
+There were `r ntrobs` observations of 4 numeric predictor variables and 2-factor predictor variables, namely `island`, and `sex`.  There is also a `year` variable that is ignored in this analysis. The data set did not have complete cases, and there is a presence of bi- and tri-modal distributions which suggests that there are differences among the penguin species. Moreover, the relationship between the `body_mass_g` and `flipper_length_mm` is a highly positive correlation, and within reason, as larger flippers would indicate an increase in body mass. However, no other relationship was too extreme.
+
+Lastly, it was noted in HW #1 that Adelie and Chinstrap measurements overlap for all variables except bill length. This feature is a definitive variable that produces complete separation among the penguin species into groups. This perfectly discriminating variable will be removed to get a reasonable estimate for the variables that can predict the outcome variable.
+
+```{r}
+dfSummary(penguins, plain.ascii = TRUE, style = "grid", graph.col = FALSE, footnote = NA)
+```
+
+### Data Preparation 
+
+From HW#1, much of the reasoning behind the data transformation and tidying was established and it is, therefore, repeated for this analysis.
+
+#### Training & Testing Split
+
+The models were trained on the same approximately 70% of the data set, reserving 30% for validation of which model to select for the species class on the test set. This will allow for the test via cross-validation scheme of the models to tune parameters for optimal performance. 
+
+```{r split}
+# Create training and testing split
+set.seed(525)
+intrain = createDataPartition(penguins$species, p = 0.70, list = FALSE)
+
+# Train & Test predictor variables
+train.p = penguins[intrain, -c(1,8)] # remove species, and year
+test.p = penguins[-intrain, -c(1,8)] 
+
+# Train & Test response variable (species)
+train.r = penguins$species[intrain]
+test.r = penguins$species[-intrain]
+```
+
+#### Pre-Processing of Predictors
+
+Missing data are treated by imputation. The classification and regression trees (CART) missing data algorithm was implemented because this could handle mixed types of missing data, and adaptable to interactions and non-linearity. 
+
+```{r}
+set.seed(525)
+temp = mice(train.p, method = 'cart', print = FALSE, m = 3, maxit = 3)
+train.p = complete(temp)
+
+temp = mice(test.p, method = 'cart', print = FALSE, m = 3, maxit = 3)
+test.p = complete(temp)
+```
+
+#### Normality & Linearity 
+
+The data were then pre-processed to fulfill the assumption of normality by centering and scaling.
+
+```{r normality}
+set.seed(525)
+# Train set
+processed_train = preProcess(train.p)
+train.p = predict(processed_train, train.p)
+
+# Test set
+processed_test = preProcess(test.p)
+test.p = predict(processed_test, test.p)
+```
+
+#### Dummy Variables
+
+The categorical variables are then dummyfied. For instance, in the variable `sex`, the female will be used as the reference, whereas in the `island` variable, Biscoe island will be used as the reference.
+
+```{r dummyVars}
+set.seed(525)
+# Train set
+train.pd = dummy.data.frame(train.p, names = c("island","sex") , sep = ".")
+train.p = cbind(train.p, train.pd[,c(1:3,8:9)])
+train.p[sapply(train.p, is.factor)] = data.matrix(train.p[sapply(train.p, is.factor)])
+train.p[,c(6:11)] = lapply(train.p[,c(6:11)], factor) 
+train.p$island = factor(train.p$island)
+  
+# Test set 
+test.pd = dummy.data.frame(test.p, names = c("island","sex") , sep = ".")
+test.p = cbind(test.p, test.pd[,c(1:3,8:9)])
+test.p[sapply(test.p, is.factor)] = data.matrix(test.p[sapply(test.p, is.factor)])
+test.p[,c(6:11)] = lapply(test.p[,c(6:11)], factor) 
+test.p$island = factor(test.p$island)
+```
+
+#### Feature Selection
+
+To identify which features are important when building predictive models, feature selection is conducted to assist in choosing variables that are useful in predicting the response. 
+
+```{r}
+featurePlot(x = train.p[, c("bill_length_mm",
+                            "bill_depth_mm",
+                            "flipper_length_mm",
+                            "body_mass_g")],
+            y = train.r,
+            plot = "density",
+            scales = list(x = list(relation = "free"),
+                          y = list(relation = "free")),
+            adjust = 1.5,
+            pch = "|",
+            layout = c(2,2),
+            auto.key = list(columns = 3))
+```
+
+The plots above represent a density plot, as saw in HW#1, there is the presence of bi- and tri-modal distributions which suggests that there are differences among the penguin species. Adelie and Chinstrap are quite similar in body mass and bill depth, while Gentoo penguin measurements are distinguishable. As for flipper length, the mean length for each species may be significantly different enough to be a predictor variable.
+
+```{r}
+featurePlot(x = train.p[, c("bill_length_mm",
+                            "bill_depth_mm",
+                            "flipper_length_mm",
+                            "body_mass_g")],
+            y = train.r,
+            plot = "ellipse",
+            auto.key = list(columns = 3))
+```
+
+The scatter grouping above further supports that Gentoo penguin measurement is distinguishable from Adelie and Chinstrap since the measurement does not overlap.
+
+```{r}
+featurePlot(x = train.p[, c("bill_length_mm",
+                            "bill_depth_mm",
+                            "flipper_length_mm",
+                            "body_mass_g")],
+            y = train.r,
+            plot = "box",
+            scales = list(y = list(relation = "free"),
+                          x = list(rot = 90)),
+            layout = c(4, 1))
+```
+
+From the box plot separated by penguin species, it is evident that flipper length may be the best predictor that can classify penguins. 
+
+Lastly, the possible features that are impactful to classifying penguin species are listed below. This was done by using the random forest algorithm to performs a top-down search for relevant features and comparing the original attributes' importance with the importance achievable at random. It shows that `bill_length_mm` is indeed the most contributing variable followed by `flipper_length_mm`, and so on. 
+
+```{r}
+output = Boruta(train.r ~ ., data = train.p, doTrace = 0)  
+roughFixMod = TentativeRoughFix(output)
+importance = attStats(TentativeRoughFix(output))
+importance = importance[importance$decision != 'Rejected', c('meanImp', 'decision')]
+kable(head(importance[order(-importance$meanImp), ])) %>%
+  kable_styling(bootstrap_options = "striped", full_width = TRUE)
+```
+
+All in all, the `flipper_length_mm` and `bill_depth_mm` are contributing variables that will be in the model. The variable `island` is kept and evaluated per model on how much of a contribution difference it makes based on the algorithm and algorithm assumptions. However, the `bill_length_mm` variable is removed due to it being a perfectly discriminating variable. Due to high correlation, `body_mass_g` is removed to avoid collinearity, followed by the `sex` variable as it does not contribute based on the feature selection investigation, and the `year` variable which is ignored.
+
+### Building the Models 
+#### Model 1: Linear Discriminant Analysis
+
+Linear Discriminant Analysis assumes that the features are multivariate normal conditioned on the target variable. LDA determines group means and computes the probability of belonging to the different groups. The model is trained and averaged over 10 repeats of 10-fold cross-validation. In the final LDA model, the `island` variable is not included as the fit was slightly better when removed, and this also accounts for a parsimonious model.
+
+```{r}
+set.seed(525)
+lda.model = train(x = train.p[, c(3:4)],
+                  y = train.r,
+                  method = "lda",
+                  trControl = trainControl(method = "repeatedcv", 
+                                           number = 10, 
+                                           repeats = 10))
+lda.model$finalModel
+```
+
+##### Model Discussion
+
+Prior probabilities of groups are the proportion of training observations in each group. There is 44.2% of the training observations in the Adelie group, 19.8% of the training observations in the Chinstrap group, and 35.9% of the training observations in the Gentoo group.
+
+The coefficients of the linear discriminants can be used to calculate the discriminant score for a given case. The score is calculated in the same manner as a predicted value from a linear regression. For each case, the function scores would be calculated using the following equations:
+
+ * $\small {score_1 = -1.62 \times BillDepth + 2.06 \times FlipperLength}$
+ * $\small {score_2 = -1.15 \times BillDepth - 1.08 \times FlipperLength}$
+
+The magnitudes of these coefficients indicate how strongly the discriminating variables affect the score. For example, FlipperLength in the first function is greater in magnitude than the coefficients for the other variable. Thus, FlipperLength will have the greatest impact of the two on the first discriminant score.
+
+The proportion of trace indicates that with just one LD, the model achieves up to a 99.7% of discrimination. Furthermore, by looking at the variable importance, how much a variable is utilized by a model to make predictions, the model can be understood. Variable importance is the sum of the decrease in error when split by a variable in tree models. For each penguin species, the features that were used to classify them are different. It is the flipper length that is the important variable for Adelie and Gentoo, whereas, for Chinstrap, it is the bill depth. 
+
+```{r fig.height=3}
+varImp(lda.model)
+dotPlot(varImp(lda.model))
+```
+```{r fig.height=5}
+partimat(train.r ~ bill_depth_mm + flipper_length_mm, data = train.p, method = "lda", image.colors = c("lightcoral", "white", "steelblue"))
+```
+
+The plot shows how different groups are defined based on the two features on the x-axis and y-axis. This plot helps to visualize the classification rule, where the colored regions delineate each classification area. Any observation that falls within a region is predicted to be from a specific group. From the plot, it is apparent that the Gentoo are easily distinguishable based on their measurements.
+
+#### Model 2: Quadratic Discriminant Analysis
+
+For this model, instead of using Gaussian densities with different means with the same covariance matrix for each class, Quadratic Discriminant Analysis is performed which uses Gaussian densities with different means and different covariance matrices for each class. Moreover, the discriminant analysis assumes that X = $(X_1, X_2, ... X_p)$ is drawn from a multivariate normal distribution, which assumes that each predictor follows a one-dimensional normal distribution. Thus, the same data proportion is trained using the continuous variables since, without the categorical variables, the model was slightly better. Again, the model is then averaged over 10 repeats of 10-fold cross-validation.
+
+```{r}
+set.seed(525)
+qda.model = train(x = train.p[,c(3:4)],
+                  y = train.r,
+                  method = "qda",
+                  trControl = trainControl(method = "repeatedcv", 
+                                           number = 10, 
+                                           repeats = 10))
+qda.model$finalModel
+```
+
+##### Model Discussion
+
+For each penguin species, the features that were used to classify them are, as expected, no different than what the LDA selected. For Adelie and Gentoo, it is the flipper length that is the most important variable used in the classification. Whereas, for Chinshtrap, it was the bill depth. With such a lower importance rank, it is expected that there is a slightly more error when classifying Chinstrap and Adelie.
+
+```{r fig.height=3}
+dotPlot(varImp(qda.model))
+varImp(qda.model)
+```
+
+Once again, the classification boundaries for the QDA classifiers show how different groups are defined based on the two features on the x-axis and y-axis. Any observation that falls within a colored region is predicted to be from a specific group. The Gentoo are easily distinguishable based on their measurements. In the plot below with bill depth and flipper length, the error rate is 0.169 when classifying penguin species. Most of this error is due to how similar Chinstraps and Adelie measurements are, and as shown with the contributing variables, only bill depth played a role in classification for Chinstraps.   
+
+```{r fig.height=5}
+partimat(train.r ~ bill_depth_mm + flipper_length_mm, data = train.p, method = "qda", image.colors = c("lightcoral", "white", "steelblue"))
+```
+
+#### Model 3: Naive Bayes
+
+The last model is Naive Bayes which uses estimated density by assuming that the inputs are conditionally independent in each class, i.e. Naive Bayes assumes that the features $X_1, X_2,…, X_p$ are independent given Y = k. Since the X's are assumed independent, it is assumed that there is no correlation between features. In this case, the `island` variable is incorporated, and the model is trained and averaged over 10 repeats of 10-fold cross-validation.
+
+\[X \mid Y = k \sim N(\mu_k, \Sigma_k)\]
+
+```{r}
+set.seed(525)
+nb.model = train(x = train.p[,c(1,3:4)], 
+                 y = train.r,
+                 method = "nb",
+                 trControl = trainControl(method = "repeatedcv", 
+                                          number = 10, 
+                                          repeats = 10))
+```
+
+##### Model Discussion
+
+The classification boundaries for the Naive Bayes classifier are quite similar to the QDA. Any observation that falls within a colored region is predicted to be from a specific group. Once again, the Gentoo penguin is easily distinguishable based on their measurements, now confirmed by all three methods. Noticeably, the error rate is 0.161 for the Naive Bayes model between the measurement. It is slightly smaller than what the LDA and QDA models determined.
+
+```{r fig.height=5}
+partimat(train.r ~ bill_depth_mm + flipper_length_mm, data = train.p, method = "naiveBayes", image.colors = c("lightcoral", "white", "steelblue"))
+```
+
+### Performance Criteria
+
+By conducting a resampling method, performance metrics were collected and analyzed to determine which model best fits the training data. The results below suggest that all three models did impressively well. But it is the Naive Bayes classifier model that has the largest mean accuracy = 86.8% from the 10 sample cross-validations. It also produces the largest kappa statistic, $\kappa$ = 0.79, which is a measure of agreement between the predictions and the actual labels. This suggests that the overall accuracy of this model is substantially better than the expected random chance classifier's accuracy. 
+
+```{r}
+set.seed(525)
+summary(resamples(list(lda = lda.model, 
+                       qda = qda.model, 
+                       nb = nb.model)))
+```
+
+Next, the overall agreement rate and Kappa statistic are determined with the test predictive variables. This will be used to decide which model is the optimal model to make predictions.
+
+```{r}
+set.seed(525)
+accuracy = function(models, predictors, response){
+  acc = list()
+  i = 1
+  for (model in models){
+    predictions = predict(model, newdata = predictors)
+    acc[[i]] = postResample(pred = predictions, obs = response)
+    i = i + 1
+  }
+  names(acc) = c("lda", "qda", "nb")
+  return(acc)
+}
+
+models = list(lda.model, qda.model, nb.model)
+accuracy(models, test.p, test.r)
+```
+
+From the results based on the test data, the Naive Bayes classifier model did exceptionally well in classifying the test set, while LDA and QDA resulted in nearly the same averages upon resampling. Thus, it can be selected that the optimal model is the Naive Bayes classifier model with an accuracy of 92.2% and $\kappa$ = 0.88 on the test set. 
+
+In terms of the confusion matrix, the results suggest that 92.1% of the predicted results seem to be correctly classified. The precision for each type of species is also high (Adelie = 89%, Chinstrap = 84%, and Gentoo = 100%), suggesting that the penguins belong to the actual species among all the penguins predicted to be that particular species, with Gentoos being classified correctly 100% of the time. Moreover, the recall highlights that 93% of the Adelie species have been correctly classified accordingly, whereas 80% of the Chinstrap species have been correctly classified, and 97% of the Gentoo species have been correctly classified. In all, this model is capable of classifying penguins into one of the three species with great accuracy, particularly Gentoo species which was expected as their measurements were quite different. Nonetheless, the Naive Bayes model's ability to classify Adelie and Chinstrap also proved to be near-optimal. And lastly, the Kappa statistic of 0.88 suggests that the overall accuracy of this model is better than the expected random chance classifier's accuracy.
+
+```{r}
+set.seed(525)
+# Confusion Matrix
+pred.R = predict(nb.model, newdata = test.p, type = "raw")
+confusion = confusionMatrix(pred.R, test.r, mode = "everything")
+confusion
+```
+
+Next, a receiver operating characteristic (ROC) analysis is shown in Figure 1. The area under the curve (AUC) for each class was estimated for observed penguin species and their predicted values by fitting a quadratic discriminant analysis model. The multi-class area under the curve for the predicted penguin species is the mean for all three AUC. It was computed to be 0.943. That is, there is a 94.3% chance that the model will be able to distinguish among the three penguin species. 
+
+<center> Fig 1: ROC Curves of the NB Model </center>
+
+```{r}
+predictions = as.numeric(predict(nb.model, test.p, type = 'raw'))
+roc.multi = multiclass.roc(test.r, predictions)
+auc(roc.multi)
+plot.roc(roc.multi[['rocs']][[1]], main = "Multi-class ROC, Macro-Average ROC = 0.943")
+sapply(2:length(roc.multi[['rocs']]), function(i) lines.roc(roc.multi[['rocs']][[i]], col=i))
+
+legend("bottomright", 
+       legend = c("ROC curve of Chinstrap",
+                  "ROC curve of Gentoo",
+                  "ROC curve of Adelie"), 
+       col = c("black", "red", "green"), lwd = 2)
+
+```
+
+### Conclusion
+
+Given the `palmerpenguins` dataset, three classification models, namely linear discriminant analysis, quadratic discriminant analysis, and Naive Bayes models were fitted. From previous exploratory analysis (HW#1), missing data, bi- and tri-modal distributions, and complete separation were handled and the data was processed for training and test sets for model evaluations.  
+
+Each model has its strengths and weakness, one of the main differences that were prevalent is that when using the factor variable `island`, LDA and QDA automatically creates dummy variables, but models them according to a normal distribution. On the other hand, Naive Bayes modeled the variable according to a multinomial distribution. While the assumption of a normal distribution is not optimal, it does not always impact the power of the LDA or QDA models tremendously when using the categorical variable. 
+
+With the feature selection investigation, Adelie and Gentoo were seen to be classified easily based on the flipper length, as it was the most important variable used in the classification. Whereas, for Chinshtrap, it was the bill depth. As a result, the Naive Bayes classifier produced a model that is 92.1% accurate in correctly classifying penguins into `Adelie`, `Chinstrap`, and `Gentoo`. This model also had an error rate of 0.161 between the measurements, which is slightly smaller than what the LDA and QDA models determined.
+
+### Works Cited
+
+1. Horst AM, Hill AP, Gorman KB (2020). *palmerpenguins: Palmer Archipelago (Antarctica) penguin data. R package version 0.1.0*. https://allisonhorst.github.io/palmerpenguins/. doi:10.5281/zenodo.3960218.
+
