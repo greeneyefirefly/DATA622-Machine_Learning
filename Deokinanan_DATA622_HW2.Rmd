@@ -80,7 +80,7 @@ ntrobs = dim(penguins)[[1]]
 penguins$year = as.factor(penguins$year)
 ```
 
-From HW#1 (available on [GitHub here](https://github.com/greeneyefirefly/DATA622-Machine_Learning/blob/main/Deokinanan_DATA622_HW2.Rmd)), the data exploration found that the response variable, `species` denotes one of three penguin species, and a majority of the penguins are Adelie (n = 153), followed by Gentoo (n = 124) and Chinstrap (n = 68). The distribution between gender is nearly equally divided among the species but not for their island habitat. 
+From HW#1 (available on [GitHub here](https://github.com/greeneyefirefly/DATA622-Machine_Learning/blob/main/Deokinanan_DATA622_HW1.Rmd)), the data exploration found that the response variable, `species` denotes one of three penguin species, and a majority of the penguins are Adelie (n = 153), followed by Gentoo (n = 124) and Chinstrap (n = 68). The distribution between gender is nearly equally divided among the species but not for their island habitat. 
 
 There were `r ntrobs` observations of 4 numeric predictor variables and 2-factor predictor variables, namely `island`, and `sex`.  There is also a `year` variable that is ignored in this analysis. The data set did not have complete cases, and there is a presence of bi- and tri-modal distributions which suggests that there are differences among the penguin species. Moreover, the relationship between the `body_mass_g` and `flipper_length_mm` is a highly positive correlation, and within reason, as larger flippers would indicate an increase in body mass. However, no other relationship was too extreme.
 
@@ -219,9 +219,19 @@ kable(head(importance[order(-importance$meanImp), ])) %>%
   kable_styling(bootstrap_options = "striped", full_width = TRUE)
 ```
 
-All in all, the `flipper_length_mm` and `bill_depth_mm` are contributing variables that will be in the model. The variable `island` is kept and evaluated per model on how much of a contribution difference it makes based on the algorithm and algorithm assumptions. However, the `bill_length_mm` variable is removed due to it being a perfectly discriminating variable. Due to high correlation, `body_mass_g` is removed to avoid collinearity, followed by the `sex` variable as it does not contribute based on the feature selection investigation, and the `year` variable which is ignored.
+All in all, the following decision were made based on the feature selection investigation:
+
+* The `flipper_length_mm` and `bill_depth_mm` are the most likely contributing variables that will be in the model.  
+* The variable `island` is kept and evaluated per model on how much of a contribution difference it makes based on the algorithm and algorithm assumptions.  
+* However, the `bill_length_mm` variable is removed due to it being a perfectly discriminating variable.   
+* Due to high correlation with `flipper_length_mm`, `body_mass_g` is removed to avoid collinearity.  
+* The `sex` variable is removed as it does not contribute based on the feature selection investigation.   
+* The `year` variable is ignored.  
 
 ### Building the Models 
+
+With the decision on the features set, there is no need to perform stepwise elimination to account for the best predictors, thus to optimize each model, 10 repeats of 10-fold cross-validation is perform. With accuracy being the decision metric for the best performing model, there is 10 repeats of the 10-fold cross-validation. By doing this, the training set is divided randomly into 10 parts and then each of 10 parts is used as testing set for the model trained on other the 9. Then the average of the 10 error terms is obtained by performing the 10-fold CV ten times. The advantage of a repeated hold-out instead of a k-fold is that there have more control.
+
 #### Model 1: Linear Discriminant Analysis
 
 Linear Discriminant Analysis assumes that the features are multivariate normal conditioned on the target variable. LDA determines group means and computes the probability of belonging to the different groups. The model is trained and averaged over 10 repeats of 10-fold cross-validation. In the final LDA model, the `island` variable is not included as the fit was slightly better when removed, and this also accounts for a parsimonious model.
@@ -316,7 +326,7 @@ partimat(train.r ~ bill_depth_mm + flipper_length_mm, data = train.p, method = "
 
 ### Performance Criteria
 
-By conducting a resampling method, performance metrics were collected and analyzed to determine which model best fits the training data. The results below suggest that all three models did impressively well. But it is the Naive Bayes classifier model that has the largest mean accuracy = 86.8% from the 10 sample cross-validations. It also produces the largest kappa statistic, $\kappa$ = 0.79, which is a measure of agreement between the predictions and the actual labels. This suggests that the overall accuracy of this model is substantially better than the expected random chance classifier's accuracy. 
+By conducting the resampling method, performance metrics were collected and analyzed to determine which model best fits the training data. The results below suggest that all three models did impressively well. But it is the Naive Bayes classifier model that has the largest mean accuracy = 86.8% from the 10 sample cross-validations. It also produces the largest kappa statistic, $\kappa$ = 0.79, which is a measure of agreement between the predictions and the actual labels. This suggests that the overall accuracy of this model is substantially better than the expected random chance classifier's accuracy. 
 
 ```{r}
 set.seed(525)
@@ -325,7 +335,7 @@ summary(resamples(list(lda = lda.model,
                        nb = nb.model)))
 ```
 
-Next, the overall agreement rate and Kappa statistic are determined with the test predictive variables. This will be used to decide which model is the optimal model to make predictions.
+Next, the overall agreement rate and Kappa statistic are determined with the test predictive variables. For each resampling iteration, a confusion matrix is created from the hold-out samples and these values are aggregated to diagnose issues with the model fit. This will be used to decide which model is the optimal model to make predictions based on the test set accuracy metrics for the models.
 
 ```{r}
 set.seed(525)
@@ -345,7 +355,7 @@ models = list(lda.model, qda.model, nb.model)
 accuracy(models, test.p, test.r)
 ```
 
-From the results based on the test data, the Naive Bayes classifier model did exceptionally well in classifying the test set, while LDA and QDA resulted in nearly the same averages upon resampling. Thus, it can be selected that the optimal model is the Naive Bayes classifier model with an accuracy of 92.2% and $\kappa$ = 0.88 on the test set. 
+Accuracy is one minus the error rate and is thus the percentage of correctly classified observations. From the results based on the test data, the Naive Bayes classifier model did exceptionally well in classifying the test set, while LDA and QDA resulted in nearly the same averages upon resampling. Thus, it can be selected that the optimal model is the Naive Bayes classifier model with an accuracy of 92.2% and $\kappa$ = 0.88 on the test set. 
 
 In terms of the confusion matrix, the results suggest that 92.1% of the predicted results seem to be correctly classified. The precision for each type of species is also high (Adelie = 89%, Chinstrap = 84%, and Gentoo = 100%), suggesting that the penguins belong to the actual species among all the penguins predicted to be that particular species, with Gentoos being classified correctly 100% of the time. Moreover, the recall highlights that 93% of the Adelie species have been correctly classified accordingly, whereas 80% of the Chinstrap species have been correctly classified, and 97% of the Gentoo species have been correctly classified. In all, this model is capable of classifying penguins into one of the three species with great accuracy, particularly Gentoo species which was expected as their measurements were quite different. Nonetheless, the Naive Bayes model's ability to classify Adelie and Chinstrap also proved to be near-optimal. And lastly, the Kappa statistic of 0.88 suggests that the overall accuracy of this model is better than the expected random chance classifier's accuracy.
 
