@@ -1,0 +1,893 @@
+---
+title: "DATA 622 - Machine Learning and Big Data"
+author: "Samantha Deokinanan"
+date: "May 09, 2021"
+output:
+  html_document:
+    theme: cerulean
+    highlight: pygments
+    toc: 2
+subtitle: 'Spring 2021 - Final Project'
+urlcolor: purple
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, error=FALSE, warning=FALSE, message=FALSE, fig.align="center")
+```
+
+***
+<center> **An Analysis of Eating and Physical Habits on Body Mass Index.** </center>
+***
+
+## R Packages
+
+The statistical tool that will be used to fascinate in the modeling of the data was `R`. The main packages used for data wrangling, visualization, and analysis were listed in the `Code Appendix`. 
+
+```{r rpackages, echo = TRUE}
+# Required R packages
+library(tidyverse)
+library(kableExtra)
+library(psych)
+library(car)
+library(caret)
+library(corrplot)
+library(outliers)
+library(GoodmanKruskal)
+library(Hmisc)
+library(Boruta)
+library(cluster) 
+library(Rtsne)
+library(DescTools)
+library(dummies)
+library(nnet)
+library(vip)
+```
+
+## Project Summary {.tabset .tabset-fade .tabset.-pills}
+
+This project is divided into three major sections:
+
+* An examination of the existence of subgroups within underweight and obese individuals. 
+* An examination if there is a type of exercise/physical activity or diet composition threshold that make normal, underweight, and overweight/obese individuals different.  
+* Development of a better classifier for classifying individuals' BMI based on their eating and physical activities using data-driven models.  
+
+*Limitations*  
+
+The limitation of this project is that Body Mass Index (BMI) is used to identify individuals who are underweight, healthy, overweight, and obese for the analysis. BMI may not always accurately classify individuals as it does not directly measure body fat.
+
+***
+<center> **PROJECT SECTIONS** </center>
+***
+
+### Backgroud 
+
+The worldwide prevalence of obesity continues to increase. According to the World Health Organization, in 2016, more than 1.9 billion people in the world were overweight, while over 650 million adults were obese (WHO, 2020). Many studies have investigated the causes and association of weight and health among different kinds of people. As a result, people are more aware of how regular activity and appropriate diet can play a critical role in preventing and managing the negative health consequences of not only obesity but others health issues such as diabetes and cardiovascular diseases. Moreover, with advancements in genetic studies, there is no single genetic cause that can explain the association with obesity. Most obesity seems to be the result of complex interactions among many genes and environmental factors (Herrera B.M., et al, 2012). 
+
+Similarly, though not as prevalent, some individuals are underweight. Poor nutrition or underlying health conditions can result in adults being underweight. In the United States, it is estimated via the 2015-2016 National Health and Nutrition Examination Survey that 1.5% of adults aged 20 and over are underweight (Yanovski J. A., 2018). These health issues lead doctors and other nutritionists to develop exercise and diet plans as a form of weight-loss and weight-gain program for individuals seeking help. By focusing on calorie intake, either by restricting or increasing, accompanied with an exercise regimen, has led to favorable changes in body composition and health conditions (Castro, E. A. et al, 2020). 
+
+Therefore, this project aims to examine the existence of subgroups within underweight and obese individuals. Moreover, this study aims to examine if there is a type of exercise/physical activity or diet composition threshold that makes normal, underweight, and overweight/obese individuals different. Lastly, there is an interest in how to better classify individuals' BMI based on their eating and physical activities using data-driven models. 
+
+### Data Exploration  
+
+```{r loaddata}
+# Set master seed
+set.seed(52508)
+
+# Set filepaths for data ingestion
+urlRemote  = "https://raw.githubusercontent.com/"
+pathGithub = "greeneyefirefly/DATA622-Machine_Learning/main/"
+fileName = "ObesityDataSet.csv"
+
+# Load dataset
+data = data.frame(read.csv(file = paste0(urlRemote, pathGithub, fileName), 
+                           header = TRUE, sep = ","),
+                  stringsAsFactors = TRUE)
+
+# Transform to factor
+coln = c("Gender","family_history","FAVC" ,"CAEC","SMOKE",
+         "SCC" ,"CALC","MTRANS","NObeyesdad")
+data[coln] = lapply(data[coln] , factor)
+
+round_col = c("FCVC","NCP","CH2O","FAF","TUE")
+data[round_col] = lapply(data[round_col] , ceiling)
+data[round_col] = lapply(data[round_col] , factor)
+```
+
+This dataset is provided by Fabio Palechor and Alexis Manotas from the Universidad de la Costa, CUC, Colombia. It can be found on [UCI Machine Learning Repository](!https://archive.ics.uci.edu/ml/datasets/Estimation+of+obesity+levels+based+on+eating+habits+and+physical+condition+). It includes the estimation of obesity levels in individuals from the countries of Mexico, Peru, and Colombia, based on their eating habits and physical condition. 
+
+The data contains 17 attributes and 2111 records. The records are labeled with the class variable `NObesity` (Obesity Level), which allows the classification of the data using the BMI of an individual. BMI is an indicator of the amount of body fat of a person. It is a measure of one's body weight to their height. It is a tool that can assess a person's risk of diseases such as obesity and be underweight. According to the National Heart, Lung, and Blood Institute, BMI values
+
+* less than 18.5 $kg/m^2$ are considered underweight,
+* from 18.5 $kg/m^2$ to 24.9 $kg/m^2$ are healthy,
+* from 25.0 to less than 30.0 $kg/m^2$ are considered to be overweight, and
+* greater than 30.0 $kg/m^2$ are considered to be obese.
+
+The formula for calculating the Body Mass Index is: $BMI = \frac{weight(kg)}{height^2(m^2)}$. The data further splits being overweight into two levels (I and II) and being obese into three levels (I, II, and III) according to WHO and the Mexican Normativity (Palechor, F. M., et al, 2019). 
+
+```{r bmi}
+# Calculating the BMI 
+data[["BMI"]] = data$Weight/(data$Height^2)
+
+# Categorizing the BMI calculated from the actual measurements.
+data[["Obesity_4f"]] = ifelse(data$BMI < 18.50,"underweight", 
+                              ifelse(data$BMI >= 18.50 & data$BMI < 25.00, "healthy",
+                              ifelse(data$BMI >= 25.00 & data$BMI < 30.00, "overweight", "obese")))
+data[["Obesity_4f"]] = factor(data[["Obesity_4f"]])
+```
+
+*Features and Descriptions*
+
+Category | Feature | Description | Variable Type  
+----|---|------|--  
+Target Variable |	NObesity |	Based on BMI | Categorical  
+Eating Habits |	FAVC | Frequent consumption of high caloric food | Categorical  
+Eating Habits |	FCVC | Frequency of consumption of vegetables |	Ordinal  
+Eating Habits |	NCP |	Number of main meals | Ordinal  
+Eating Habits |	CAEC | Consumption of food between meals | Ordinal  
+Eating Habits |	CH20 | Consumption of water daily |	Ordinal  
+Eating Habits | CALC | Consumption of alcohol | Ordinal  
+Physical Conditioning |	SCC |	Calories consumption monitoring |	Categorical  
+Physical Conditioning |	FAF |	Physical activity frequency | Ordinal  
+Physical Conditioning |	TUE |	Time using technology devices |	Ordinal  
+Physical Conditioning |	MTRANS | Transportation used | Categorical  
+Physical Conditioning |	SMOKE |	Smokes | Categorical  
+Respondent Characteristics | family_history | Family History with Overweight | Categorical  
+Respondent Characteristics | Gender	| Gender | Categorical  
+Respondent Characteristics | Age | Age in years | Integer  
+Respondent Characteristics | Height |	Height in meters | Float  
+Respondent Characteristics | Weight	| Weight in kilograms |	Float  
+
+#### Target Variable
+
+The target feature is the individual BMI category of being health - obese. Their distribution among the categories is well-balanced.
+
+```{r tragetviz}
+temp = data %>%
+  group_by(NObeyesdad) %>%
+  summarise(counts = n())
+
+temp = temp %>%
+  arrange(desc(NObeyesdad)) %>%
+  mutate(prop = round(counts*100/sum(counts), 1),
+         lab.ypos = cumsum(prop) - 0.5*prop)
+
+ggplot(temp, aes(NObeyesdad, prop)) +
+  geom_linerange(aes(x = NObeyesdad, ymin = 0, ymax = prop), 
+    color = "lightgray", size = 1)+
+  geom_point(aes(color = NObeyesdad), size = 3) +
+  ggpubr::color_palette("jco") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(y = "Proportion, in %", x = "BMI category", 
+       title =  "Balanced Distribution of the BMI category") +
+  theme(legend.position = "none") 
+```
+
+***
+
+#### Predictive Variables
+
+##### Summary Statistic
+
+Based on the summary statistic for the data, `Table 1`, some initial observations can be made. Firstly, the data set has complete cases, thus, there was no need for imputation. There is a near-equal distribution between the `Gender`. Lastly, `Age` appears to be highly skewed, and will need data transformation to satisfy the assumption of normality. 
+
+```{r sumstat}
+summarytools::dfSummary(data, plain.ascii = TRUE, style = "grid", graph.col = FALSE, footnote = NA)
+```
+
+***
+
+##### Missing Data
+
+As confirmed by the summary statistic, this data set does not contain any missing data.
+
+***
+
+##### Outlier
+
+Further exploration revealed that some variables may be strongly influenced by outliers. An outlier is an observation that lies an abnormal distance from other values in a random sample. Outliers in the data could distort predictions and affect the accuracy. 
+
+```{r outliers}
+par(mfrow = c(1,4))
+for (i in c(2:4,18)){
+  boxplot(
+    data[i], main = sprintf("%s", names(data)[i]), col = "steelblue2",outcex = 1,
+    xlab = sprintf("# of outliers = %d", length(boxplot(data[i], plot = FALSE)$out)))
+}
+```
+
+Because the variable `Age` has 168 possible outliers, the Grubbs’ Test is a statistical test that can be used to identify the presence of outliers in a dataset. This test uses the following two hypotheses:
+
+$H_0$: There is no outlier in the data.  
+$H_1$: There is an outlier in the data. 
+
+The test statistic of upper bound is G = 5.78, p-value < 0.05. This means that there is evidence that the max value of 61 is an outlier. The test statistic of the lower bound is G = 1.63, p-value > 0.05. Since this value is not less than 0.05, there is not sufficient evidence to say that the minimum value of 14 is an outlier. 
+
+```{r grubbs}
+# Outlier check 
+grubbs.test(data$Age) # upper bound significant
+grubbs.test(data$Age, opposite = TRUE) # lower bound significant
+```
+
+***
+
+##### Test of Normality 
+
+The density plot provides a good visual judgment about whether the distribution of the variables is Gaussian. From the plots below, the distributions for most of the variables appear to be bell-shaped. While `Age` is skewed, a significance test for comparing the sample distribution to a normal one to ascertain whether data show or not a serious deviation from normality is conducted.
+
+In this case, Shapiro-Wilk’s method is used as the normality test. It is on the correlation between the data and the corresponding normal scores. From the outputs, all the p-value > 0.05, suggesting that the distribution of the numeric data features is not significantly different from a normal distribution. In other words, the numeric features are assumed to have normality.
+
+```{r norm}
+norm = lapply(data[,c(2:4,18)], function(x) shapiro.test(x))
+do.call(rbind, norm)[,c(1,2)]
+```
+
+```{r normplot}
+temp = data[, c(2:4,18)]
+skew = as.data.frame(psych::describe(temp))
+par(mfrow = c(2,2))
+for (i in c(1:4)){
+  rcompanion::plotNormalDensity(
+    temp[,i], main = sprintf("Density of %s", names(temp)[i]), 
+    xlab = sprintf("skewness = %1.2f", skew[i,11]), 
+    col2 = "steelblue2", col3 = "royalblue4") 
+}
+```
+
+***
+
+##### Homogeneity of Variance Test
+
+The Pearson’s chi-squared test of independence is then used to analyze the categorical data. This test determines whether or not there exists a statistical dependence between them. The hypothesis is such that:
+
+$H_0$: The two variables are independent.  
+$H_1$: The two variables are dependent.  
+
+```{r homogeneity}
+chi = lapply(data[,-c(2:4,17:19)], function(x) chisq.test(data$NObeyesdad, x))
+do.call(rbind, chi)[,c(1,3)]
+```
+
+Based on the results, at a 95% confidence level, there is no evidence that the variables are dependent. With independence assumed, Levene's test for equality of variances is used to test if the samples have equal variances. Levene’s test assesses the assumption that variances of the populations from which various samples are formed are equal. This test is also less sensitive to departures from normality. 
+
+$H_0$: All population variances are equal.  
+$H_1$: At least two of them differ.  
+
+```{r levene}
+levene = lapply(data[,-c(2:4,17:19)], function(x) leveneTest(data$BMI, x, center = median))
+do.call(rbind, levene)[,c(1,3)]
+```
+
+Levene’s test showed that the variances for smoking were not equal for the BMI measurement,  p > 0.05. Therefore, care should be taken when comparing these two groups.
+
+***
+
+##### Correlation
+
+The next step in the data exploration is the corrgram below which graphically represents the correlations between the numeric predictor variables. Overall, the numeric variables were not strongly correlated with one another, except for BMI and weight since it is expected that BMI would strongly correlate with weight.
+
+```{r corrgram}
+corrplot::corrplot(cor(data[,c(2:4,18)]),
+         method = 'ellipse', type = 'lower', order = 'hclust',
+         hclust.method = 'ward.D2')
+```
+
+Moreover, it is essential to examine the effect size or the strength of association among the categorical features. The measure of association does not indicate causality, and this can indicate the strength of the relationship between categorical variables. For the nominal categorical predictors, the Goodman and Kruskal’s tau measure is appropriate, whereas, for the ordinal categorical predictors, the Goodman and Kruskal’s gamma measure is appropriate.
+
+```{r corr_cat_t, fig.height=6}
+varset = c(1, 5, 6, 10, 12)
+mushroomFrame1 = subset(data, select = varset)
+GKmatrix1 = GKtauDataframe(mushroomFrame1)
+plot(GKmatrix1, corrColors = "blue")
+```
+
+The Goodman and Kruskal's tau measure is an asymmetric association measure between two categorical variables, based on the extent to which variation in one variable can be explained by the other. Above shows the association plot, where on the diagonals, `K` refers to the number of unique levels for each variable. The off-diagonal elements contain the forward and backward tau measures for each variable pair. From the result, there is no striking feature from this plot in both the forward and backward associations.
+
+```{r corr_cat_g}
+gamma = lapply(data[,c(7,8,11,13,14)], function(x) rcorr.cens(as.numeric(data$NObeyesdad), x))
+do.call(rbind, gamma)[,c(1,2,3)]
+```
+
+Goodman and Kruskal's gamma is a measure of the strength and direction of association that exists between two variables measured on an ordinal scale. The gamma statistic is given by $Dxy$. Goodman and Kruskal's gamma is run to determine the association between BMI levels and the consumption of vegetables, the number of main meals, water daily intake, physical activity, and time using technology devices among 2111 participants. There were weak correlations among these activity level and the BMI levels, which was statistically significant (p < 0.05). 
+
+### Data Preparation 
+
+Because of the properties that the data set possess that were established by the exploration tests, the data underwent various pre-processing steps to allow for accuracy and reliability during analysis. As a recap, the data already fulfilled the following:
+
+* The data is not significantly different from a normal distribution.  
+* There is no strong correlation among the numeric and categorical variables.  
+* The variables are all independent. 
+
+This leaves the data pre-processing to include treating the outliers, creating dummy variables, and splitting the data into training and testing sets.
+
+***
+
+#### Pre-Processing of Predictors
+
+The outliers are treated by placing a cap on the top 99%. This reduces the number of cases to 2100 respondents.
+
+```{r remove_outliers}
+upper_bound = quantile(data$Age, 0.995)
+idx = which(data$Age > upper_bound)
+data = data[-c(idx), ]
+``` 
+
+***
+
+#### Dummny Variable
+
+All categorical variables within this data set are converted into a set of dummy variables. For instance, in the variable `Gender`, the female will be used as the reference, whereas in the `MTRANS` variable, mode of transportation by Automobile will be used as the reference.
+
+```{r dummyVars, include=FALSE}
+set.seed(525)
+lapply(data[,-c(2:4,18)], function(x) contrasts(x))
+```
+
+***
+
+#### Training & Testing Split
+
+All the models built as a means to better classify individuals' BMI based on their eating and physical activities were trained on the same approximately 70% of the training set, reserving 30% for validation on the test set. This further means that the variables 'BMI', 'Weight', and 'Height' are removed to reduce bias.
+
+```{r trainTestSplit}
+# Create training and testing split from training data
+set.seed(525)
+dumm = dummy.data.frame(data[,-c(17,19)])
+data_dm = cbind(dumm, data[,c(17,19)])
+data_dm[,-c(3:5,44)] = lapply(data_dm[,-c(3:5,44)], factor) 
+
+intrain = createDataPartition(data_dm$Obesity_4f, p = 0.70, list = FALSE)
+
+# Train & Test predictor variables
+train.p = data_dm[intrain, ] %>% select(-c('NObeyesdad', 'BMI', 'Weight', 'Height', 'Obesity_4f'))
+test.p = data_dm[-intrain, ] %>% select(-c('NObeyesdad', 'BMI', 'Weight', 'Height', 'Obesity_4f'))
+
+# Train & Test response variable 
+train.r = data_dm$Obesity_4f[intrain]
+test.r = data_dm$Obesity_4f[-intrain]
+```
+
+### Subgroups based on BMI
+
+Clustering is a broad set of techniques for finding subgroups of observations within a data set. When clustering observations, observations in the same group are likely to be similar. With no response variable, this is an unsupervised method, which implies that it seeks to find relationships between the observations without being trained by a response variable. 
+
+Firstly, to observe the similarity between the cases, typically the Euclidean distance is calculated, however, for a clustering algorithm to yield sensible results with mixed data, the Gower distance is used instead. By using the Gower distance, a particular distance metric for each variable type is used and the feature is scaled to fall between 0 and 1. Then, a linear combination is created from the final distance matrix. 
+
+```{r gower}
+set.seed(525)
+gower_dist = daisy(data, metric = "gower")
+underweight = data[which(data$Obesity_4f == "underweight"),-c(3,4,17:19)]
+gower_under = daisy(underweight, metric = "gower")
+obese = data[which(data$Obesity_4f == "obese"), -c(3,4,17:19)]
+gower_obese = daisy(obese, metric = "gower")
+```
+
+By looking at the results, the most similar and dissimilar pairs are shown below. A comparison of the items highlights how closely and not these specific pairs are with each other. Such results make Gower distance suitable for mixed data. Thus, the data is split into those who are labeled underweight and obese according to their BMI, and the respective Gower distance is calculated.
+
+
+```{r}
+df = data
+df['Age'] = ceil(data['Age'])
+```
+```{r pairs}
+set.seed(525)
+gower_mat = as.matrix(gower_dist)
+
+df[which(gower_mat == min(gower_mat[gower_mat != min(gower_mat)]),
+        arr.ind = TRUE)[1, ], -c(3,4,17:19)] %>% 
+  kable(caption = 'Most similar pair') %>% 
+  kable_styling(bootstrap_options = "striped") %>%
+  scroll_box(width = "100%", height = "200px")
+
+# Output most dissimilar pair
+df[which(gower_mat == max(gower_mat[gower_mat != max(gower_mat)]),
+        arr.ind = TRUE)[1, ], -c(3,4,17:19)] %>% 
+  kable(caption = 'Most dissimilar pair') %>% 
+  kable_styling(bootstrap_options = "striped") %>%
+  scroll_box(width = "100%", height = "200px")
+```
+
+***
+
+#### Who are the Underweight?
+
+Now the distance matrix has been calculated, an examination of the existence of subgroups within underweight individuals is conducted first. Using partitioning around medoids (PAM), an iterative clustering procedure, identification of the observation that would yield the lowest average distance be the medoid are found. This procedure is similar to the k-mean algorithm which uses the cluster centers defined by Euclidean distance instead.
+
+The silhouette width is used to determine the number of clusters to be extracted in cluster analysis. This is an internal validation metric which is an aggregated measure of how similar observation is to its cluster compared to its closest neighboring cluster. The metric can range from -1 to 1, where higher values are better.
+
+```{r sil_under}
+set.seed(525)
+sil_width = c(NA)
+for(i in 2:10){
+  pam_fit = pam(gower_under, diss = TRUE, k = i)
+  sil_width[i] = pam_fit$silinfo$avg.width
+}
+```
+
+After calculating silhouette width for clusters ranging from 2 to 10 for the PAM algorithm, it shows that 3 clusters yield the highest value. Based on the summary results for these 3 clusters, it seems as though:
+
+* Cluster 1 for those who are underweight comprises mainly young, non-smoker male adults who are below the age of 25 (95%, n = 57). Interestingly, 100% reported having a family history with overweight, while a majority (97%) does not monitor their calorie consumption and claims frequent consumption of high caloric food. Vegetables are always consumed for 75% of those in Cluster 1, and nearly 82% eat more than three main meals. About 90% would sometimes snack between meals, and 77% do not consume alcohol. In terms of physical habits, nearly 74% of those in Cluster 1 utilize automobiles as their mode of transportation and engage in physical exercise 2 to 4 days a week.
+
+* Cluster 2, on the other hand, is mainly non-smoker females that have a mean age of 19 years old (83%, n = 116). Nearly 76% consume high caloric food but a majority do not monitor calorie intake. Moreover, 69% have eating habits which include vegetables, some alcohol (91%) and consumes food between meals (98%). Their mode of transportation is public (96), and engage in physical exercise 2 to 4 days (57%). Water consumption is more skewed in this cluster than the other two, and it shows that Cluster 2 typically consumes between 1 to 2 liters daily. In particular to Cluster 2, 94% reported not having a family history with overweight.
+
+* Finally, Cluster 3 is mainly non-smoker females with an age range of 20 to 34 years old (73%, n = 52). Approximately, 77% of this group have a family history with overweight, and consumes high caloric food but will monitor its consumption. Public transposition and no alcohol consumption are activities for this cluster. Physical activities are reported  1 to 2 days a week, and this cluster tends to spend more hours on technology than the previous two clusters.
+
+```{r pam}
+set.seed(525)
+pam_fit = pam(gower_under, diss = TRUE, k = 3)
+pam_results_under = underweight %>%
+  mutate(cluster = pam_fit$clustering) %>%
+  group_by(cluster) %>%
+  do(the_summary = summary(.))
+# pam_results_under$the_summary
+```
+
+Since the methodology includes custom algorithms due to using mixed data types, visualization needs to be customized as well. To project the clusters with this many variables in a lower-dimensional space, the t-distributed stochastic neighborhood embedding, or t-SNE, is used as a dimensionality reduction technique. This method tries to preserve the local structure. In this case, the plot shows the 3 separated clusters that PAM was able to detect. 
+
+```{r under_p}
+set.seed(525)
+tsne_obj = Rtsne(gower_under, is_distance = TRUE)
+tsne_data_under = tsne_obj$Y %>%
+  data.frame() %>%
+  setNames(c("X", "Y")) %>%
+  mutate(cluster = factor(pam_fit$clustering))
+```
+
+```{r under_plot}
+ggplot(aes(x = X, y = Y), data = tsne_data_under) +
+  geom_point(aes(color = cluster)) +
+  labs(title = "Clusters of the Underweighted")
+```
+
+***
+
+#### Who are the Obese?
+
+The same techniques as described above are repeated to examine the existence of subgroups within obese individuals. 
+
+```{r sil_obese}
+set.seed(525)
+sil_width = c(NA)
+for(i in 2:10){
+  pam_fit = pam(gower_obese, diss = TRUE, k = i)
+  sil_width[i] = pam_fit$silinfo$avg.width
+}
+```
+
+Based on the summary results, there are many clusters in this within those who are obese. The optimal number of the cluster goes beyond k = 20 different groups, and such a large number of clusters for this sample size does not help identify unique characteristics among groups if the splits are eventually individualized. For this reason, the analysis is run on multiple ks to identify optimal cluster sizes that are more or less comparable. With the shift in silhouette width starting at k = 5 and gradually increases, it is kept as the default optimal k until other ks are inspected.
+
+In the end, although not perfect (especially Cluster 4), the clusters in the plot are mostly located in similar areas, confirming the relevancy of the segmentation. Thus, by looking at the somewhat balanced divisions when k = 5, the characteristics for each cluster is described below:
+
+* Cluster 1 for those who are obese comprises mainly non-smoker male adults who have a mean age of 26 (82%, n = 215). Almost all reported to have a family history with overweight, do not monitor their calorie consumption, and claim frequent consumption of high caloric food. About 98% would sometimes snack between meals, and 87% do not consume alcohol. Moreover, vegetables are always consumed for 83% of those in Cluster 1, while nearly 86% drink alcohol sometimes, and 82% drink more the 2 liters of water a day. In terms of physical habits, most of those in Cluster 1 utilize public transportation as their mode of transportation and engage in physical exercise 1 to 2 days a week. Technological uses are more specific in the obese clusters than the underweight clusters. Particularly, in Cluster 1, around 75% spend about 3-5 hours on technological devices.
+
+* Cluster 2 is mainly non-smoker males that fall within the age range of 30 to 40 years old. The major distinctions that set Cluster 2 apart from Cluster 1 are that this group drinks about 1 to 2 liters of water daily (62%), spends about 1 to 2 hours on technological devices, and their mode of transportation is via automobile.
+
+* Cluster 3 for those who are obese is mainly young, non-smoker females adults who are below the age of 25. When compared to the previous clusters, 67% of Cluster 3 consumes between 1 to 2 liters of water, and they are engaged in physical activities 2 to 4 days a week. Like their Cluster 1 counterparts, nearly 96% are using their technological devices 1 to 2 hours a day and utilize public transportation.
+
+* Cluster 4 is mainly non-smoker females that as a median and mean age of 26. The uniqueness of this cluster is also due to their level of physical activity and water intake. In this cluster, they reported not spend time on physical activities and drink more than 2 liters of water a day.
+
+* Finally, Cluster 5 is mainly non-smoker females with an age range of 20 to 24 years old. A majority of this group eats fewer vegetables than the other clusters, (94%). Their water intake, physical activities, and technological usage varies within this group, unlike the other clusters which are similar within the group.
+
+```{r pam2}
+set.seed(525)
+pam_fit = pam(gower_obese, diss = TRUE, k = 5)
+pam_results_obese = obese %>%
+  mutate(cluster = pam_fit$clustering) %>%
+  group_by(cluster) %>%
+  do(the_summary = summary(.))
+# pam_results_obese$the_summary
+```
+
+```{r obese_p}
+set.seed(525)
+tsne_obj = Rtsne(gower_obese, is_distance = TRUE)
+tsne_data_obese = tsne_obj$Y %>%
+  data.frame() %>%
+  setNames(c("X", "Y")) %>%
+  mutate(cluster = factor(pam_fit$clustering))
+```
+
+```{r obese_plot}
+ggplot(aes(x = X, y = Y), data = tsne_data_obese) +
+  geom_point(aes(color = cluster)) +
+  labs(title = "Clusters of the Obese")
+```
+
+Overall, the clustering suggests that there are 3 subgroups of underweight individuals and around 5 subgroups of individuals who are obese. Their distinctions are mainly due to gender and age. For the underweight clusters, consuming high caloric food and having a family history with overweight are common, similar to those obese. Snacking between meals, eating vegetables, and water and alcohol intake, all suggest similar patterns with those obese as well. The same goes for the physical activities for those underweight and obese. The only distinction appears to be the usage of technological devices such as cell phones, video games, television, computer, and others. Most of those obese spent about 5 hours and more on technology whereas a majority of those underweight spend less than 5 hours.
+
+### Exercising & Eating Habits
+
+From the clustering, the differences between the eating and physical habits of those underweight and obese are quite subtle. To examine if there is a type of exercise/physical activity or diet composition threshold that makes normal, underweight, overweight/obese individuals different, Kruskal-Wallis H tests are conducted.
+
+Kruskal-Wallis is a rank-based nonparametric test that can be used to determine if there are statistically significant differences between two or more groups of an independent variable on a continuous or ordinal dependent variable. It is considered the nonparametric alternative to the one-way ANOVA, and an extension of the Mann-Whitney U test to allow the comparison of more than two independent groups. 
+
+The first testing hypothesis is whether or not there is a difference in high caloric food and BMI levels.
+
+```{r kt_cal}
+kruskal.test(data$FAVC ~ data$Obesity_4f)
+```
+
+From the above, since the p-value is less than 0.05, the null hypothesis can be rejected. Therefore, there is a difference in high caloric food and BMI levels.
+
+Since the Kruskal–Wallis test is significant, a post-hoc analysis was performed to determine which levels of the independent variable differ from each other. The most popular test for this is the Dunn test, which is performed adjustments to the p-values by using the method option to control the family-wise error rate or to control the false discovery rate. The Dunn test is also appropriate for groups with unequal numbers of observations.
+
+```{r dt_cal}
+DunnTest(data$FAVC ~ data$Obesity_4f, method = "bonferroni")
+```
+
+It is interesting to see that, at a 95% confidence level, there is no difference in high caloric food consumption between those underweight with those healthy and overweight (H = 169.83, 3 d.f, p < 0.05). Nonetheless, despite the cluster descriptions, the data suggest that there is a difference in high caloric food intake between those underweight and those obese.
+
+Comparing a few more eating and physical activities habit with individuals' BMI levels, the results suggest that there is no evidence of a difference in the water intake between underweight and overweight individuals, while all other pairings are statistically significant (H = 219.89, 3 d.f, p < 0.05). Moreover, there is evidence that the frequency of physical activities between those underweight and those obese are statistically different (H = 32.29, 3 d.f, p < 0.055). This is also evident for the underweight-healthy, and underweight-overweight comparisons. Lastly, there is no evidence of a difference in the usage of technological devices between overweight and obese individuals, while all other pairings are statistically significant (H = 55.86, 3 d.f, p < 0.05).
+
+```{r kt_water, include=FALSE}
+kruskal.test(data$CH2O ~ data$Obesity_4f)
+DunnTest(data$CH2O ~ data$Obesity_4f, method = "bonferroni")
+```
+```{r kt_physical, include=FALSE}
+kruskal.test(data$FAF ~ data$Obesity_4f)
+DunnTest(data$FAF ~ data$Obesity_4f, method = "bonferroni")
+```
+```{r kt_tech, include=FALSE}
+kruskal.test(data$TUE ~ data$Obesity_4f)
+DunnTest(data$TUE ~ data$Obesity_4f, method = "bonferroni")
+```
+
+### Classifying BMI  
+
+Before modeling the data, there needs to be an identification of which features are important since that can lead to better predictions and a parsimonious model. Feature selection is conducted to assist in choosing variables that are useful in predicting the response. 
+
+The possible features that are impactful to classifying individuals' BMI are listed below. This was done by using the random forest algorithm to performs a top-down search for relevant features and comparing the original attributes' importance with the importance achievable at random. It shows that gender, age, and calorie intake are indeed the most contributing variable. The least contributing is smoking.
+
+```{r boruta}
+train.p1 = data[intrain, ] %>% select(-c('NObeyesdad', 'BMI', 'Weight', 'Height', 'Obesity_4f'))
+train.r1 = data$Obesity_4f[intrain]
+
+output = Boruta(train.r1 ~ ., data = train.p1, doTrace = 0)  
+roughFixMod = TentativeRoughFix(output)
+importance = attStats(TentativeRoughFix(output))
+importance = importance[importance$decision != 'Rejected', c('meanImp', 'decision')]
+kable(importance[order(-importance$meanImp), ]) %>%
+  kable_styling(bootstrap_options = "striped", full_width = TRUE)
+```
+
+In the end, it appears that all 14 variables are confirmed to be important despite their rankings, therefore, they are all kept and models will be tuned for the best predictors. Three different learning algorithms are utilized. These include a 1) k-Nearest Neighbor, 2) Naive Bayes, and 3) Neural Network algorithms. These models are evaluated for the best fitting model capable of classifying individuals' BMI categories. The model accuracy rate is used to determine the best tuning. Accuracy is one minus the error rate and is thus the percentage of correctly classified observations. 
+
+Moreover, to optimize each model, and with accuracy being the decision metric for the best performing model, the 10-fold cross-validation is run. By doing this, the training set is divided randomly into 10 parts and then each of 10 parts is used as a testing set for the model trained on other the 9. Then the average of the 10 error terms is obtained by performing the 10-fold CV three times. A repeated hold-out offers greater control than a simple k-fold and it is a very effective method to estimate the prediction error and the accuracy of a model. Apart from the cross-validation, stacked generalization is lastly used to create an ensemble machine learning algorithm with these models as the base learner.
+
+***
+
+#### Model #1: k-Nearest Neighbor Classification
+
+k-Nearest Neighbors is a classification algorithm that takes the new unlabeled data as input and determines the k closest labeled training data points, in other words, the k-nearest neighbors. Using the neighbors’ classes, kNN learns how to classify the data. The classification is decided by a majority vote, with ties broken at random. Unlike for continuous data, where the distance metric is the Euclidean distance, discrete data is transformed into discrete data using methods such as Hamming distance, dissimilarity matrix (such as for this case), etc.
+
+```{r knn.model, eval=FALSE}
+set.seed(525)
+train_control = trainControl(method = "repeatedcv",
+                             number = 10,
+                             repeats = 3,
+                             classProbs = TRUE)
+
+knn.model = train(x = train.p,
+                  y = train.r,
+                  method = "knn",
+                  trControl = train_control)
+
+saveRDS(knn.model, "knn.model.rds")
+```
+```{r}
+knn.model = readRDS("knn.model.rds")
+```
+
+```{r knn.model.p, echo = FALSE, fig.height=4, fig.width=9}
+p1 = plot(knn.model, main = "Accuracy of kNN Model")
+p2 = dotPlot(varImp(knn.model, scale = TRUE), top = 10)
+gridExtra::grid.arrange(p1,p2,ncol=2)
+```
+
+The best tune for the kNN model measured by accuracy is k = 5. It has accuracy = 75.6% and $\kappa$ = 0.63. This tune accounts for the largest portion of the variability in the data. Moreover, the variable importance seems to differ for the BMI categories. The variable that contributes the most for all categories, except for being underweight, is `Age`. It is the consumption of food between meals that is consider the most contribution feature for those underweight, followed by age. The next important feature is whether individuals have a family history of overweight, followed by water intake. The least contributing is how often individuals consume alcohol.
+
+***
+
+#### Model #2: Naive Bayes
+
+The next model is Naive Bayes which uses estimated density by assuming that the inputs are conditionally independent in each class, i.e. Naive Bayes assumes that the features $X_1, X_2,…, X_p$ are independent given Y = k. Since the X's are assumed independent, it is assumed that there is no correlation between features. 
+
+\[X \mid Y = k \sim N(\mu_k, \Sigma_k)\]
+
+Thus, the theorem allows for the prediction of the class given a set of features using probability.
+
+```{r nb.model, eval=FALSE}
+set.seed(525)
+nb.grid = expand.grid(usekernel = c(TRUE, FALSE),
+                      fL = 0:5,
+                      adjust = seq(0, 5, by = 1))
+
+nb.model = train(x = train.p, 
+                 y = train.r,
+                 method = "nb",
+                 trControl = train_control,
+                 tuneGrid = nb.grid)
+saveRDS(nb.model, "nb.model.rds")
+```
+```{r}
+nb.model = readRDS("nb.model.rds")
+```
+
+```{r nb.model.p, echo = FALSE, fig.height=4, fig.width=9}
+p1 = plot(nb.model, main = "Accuracy of Naive Bayes Model")
+p2 = dotPlot(varImp(nb.model, scale = TRUE), top = 10)
+gridExtra::grid.arrange(p1,p2,ncol=2)
+```
+
+The best tune for the Naive Bayes model measured by accuracy is with a kernel density estimation and a Laplace correction of 3. It has accuracy = 65.2% and $\kappa$ = 0.48. This tune accounts for the largest portion of the variability in the data. Similar to the kNN model, the variable importance differs for the BMI categories, but the variable that contributes the most for all categories, except for being underweight, is once again `Age`. 
+
+***
+
+#### Model #3: Neural Networks with Feature Extraction
+
+Neural Networks are a machine learning framework that attempts to mimic the learning pattern of natural biological neural networks. Firstly, principal component analysis is run on the data and the cumulative percentage of variance is computed for each principal component. The function uses the thresh argument to determine how many components must be retained to capture this amount of variance in the predictors. The results in then used in a neural network model. When making predictions, the new data are similarly transformed using the information from the PCA analysis on the training data.
+
+```{r nn.model, eval = FALSE}
+set.seed(525)
+nn.grid = expand.grid(decay = c(0, 0.01, .1), 
+                      size = c(1:10)) 
+nn.model = train(x = train.p, 
+                 y = train.r,
+                 method = "pcaNNet",
+                 tuneGrid = nn.grid,
+                 trControl = train_control,
+                 tuneLength = 5, 
+                 maxit = 10,
+                 trace = FALSE)
+
+saveRDS(nn.model, "nn.model.rds")
+```
+```{r}
+nn.model = readRDS("nn.model.rds")
+```
+
+```{r nn.model.p, echo = FALSE, fig.height=4, fig.width=9}
+p1 = plot(nn.model, main = "Accuracy of Neural Network Model")
+p2 = dotPlot(varImp(nn.model, scale = TRUE), top = 10)
+gridExtra::grid.arrange(p1,p2,ncol=2)
+```
+
+The best tune for the Neural Network model measured by accuracy is with a layer size (number of neurons) of all the layers being 4 and a regularization decay of 0.1. It has accuracy = 54.9% and $\kappa$ = 0.25. This tune accounts for the largest portion of the variability in the data. But this also makes it the poorest fitting model on the training data despite the features have similar ranks as the previous two models. 
+
+***
+
+#### Model Evaluation 
+
+By conducting the resampling method, performance metrics were collected and analyzed to determine which model best fits the training data. Thus far, kNN outperforms the Naive Bayes and the Neural Network models. And after the 10 resample cross-validation, kNN is still the model that has the largest mean accuracy = 75.6%. It also produces the largest kappa statistic, = 0.63, which is a measure of agreement between the predictions and the actual labels. This suggests that the overall accuracy of this model is substantially better than the expected random chance classifier’s accuracy.
+ 
+```{r resample}
+set.seed(525)
+summary(resamples(list(knn = knn.model, nb = nb.model, nn = nn.model)))
+```
+
+From the results based on the test data, the kNN model did exceptionally well in classifying the test set, while Naive Bayes and Neural Network did better than their resampling results. Of these three models, kNN can be considered the best fitting model for classifying individuals' eating and physical habits into BMI levels. But improvements can be made.
+
+```{r compTable}
+set.seed(525)
+accuracy = function(models, predictors, response){ 
+  acc = list() 
+  i = 1
+  for (model in models){
+    predictions = predict(model, newdata = predictors) 
+    acc[[i]] = postResample(pred = predictions, obs = response) 
+    i = i + 1
+  }
+  names(acc) = c("kNN","NaiveBayes","NeuralNetwork")
+  return(acc) 
+}
+models = list(knn.model, nb.model, nn.model) 
+accuracy(models, test.p, test.r)
+```
+
+***
+
+#### Ensemble Classification
+
+An ensemble classification model is now considered the 4th model. The goal of the stacked ensemble learning algorithm is to combine several models to improve the prediction accuracy in learning problems with a target variable. Stacking does not guarantee to result in an improvement in all cases. Achieving a performance improvement depends on the complexity of the problem and whether it is sufficiently well represented by the training data and complex enough that there is more to learn by combining predictions. It is also dependent upon the choice of base models and whether they are sufficiently skillful and sufficiently uncorrelated in their predictions (or errors). There were three phases of processing ensemble learning. These include the generation phase, the pruning phase, and the integration phase. Employing the previous models as base learners, a function is built that can be used to specify a higher-order model to learn how to best combine the predictions of sub-models. 
+
+Stacking generalization is used because the base models are all different. Thus, it can harness the predictive power of each of the models. The architecture of a stacking model involves two or more base models, often referred to as level-0 models. Base models are often complex and diverse. There is then a meta-model, often simple, that combines the predictions of the base models, referred to as a level-1 model. In this case, the architecture is defined as:
+
+![](C:/Users/Deokinanan/Desktop/2019 -2021 CUNY SPS/SPRING 2021/DATA 622/Final Project/ensemble.png)
+
+```{r ensemble, eval = FALSE}
+set.seed(525)
+library(mlr) # load later to avoid masking caret::train()
+
+# Select base-learners
+base = c("classif.kknn", "classif.naiveBayes", "classif.nnTrain")
+learners = lapply(base, makeLearner)
+learners = lapply(learners, setPredictType, "prob")
+
+# Build the model
+model = makeStackedLearner(base.learners = learners,
+                           super.learner = "classif.glmnet",
+                           predict.type = "prob", 
+                           method = "stack.cv")
+
+# The data set
+EMdata = cbind(train.p_dm, train.r)
+tsk = makeClassifTask(data = EMdata, target = "train.r")
+
+# Train the ensemble model
+en.model = train(model, tsk)
+
+# Get the predictions to calculate accuracy
+pred = predict(en.model, tsk)
+
+# Save the model
+saveRDS(en.model, "en.model.rds")
+```
+```{r}
+library(mlr) 
+en.model = readRDS("en.model.rds")
+```
+
+```{r ensemble_imp}
+train.p_dm = as.data.frame(lapply(train.p, as.numeric))
+EMdata = cbind(train.p_dm, train.r)
+tsk = makeClassifTask(data = EMdata, target = "train.r")
+pred = predict(en.model, tsk)
+
+ms = list("mmce" = mmce, "acc" = acc)
+performance(pred, measures = ms, en.model) %>% 
+  kable(caption = "Performance of the Ensemble", digits = 3L) %>% 
+  kable_styling("striped", full_width = TRUE)
+```
+
+The ensemble model resulted in an impressive accuracy rate of 91.6% on the training set. The mean misclassification error is only 0.084, and this is a great improvement when compared to the other three models' performances alone. Additionally, the feature importance is no different from the individual models.
+
+```{r em_plot}
+fval = generateFilterValuesData(tsk,
+  method = c("FSelectorRcpp_gain.ratio", "FSelectorRcpp_information.gain"))
+
+plotFilterValues(fval, filter = "FSelectorRcpp_information.gain",
+                 sort = "inc",
+                 n.show = 10) +
+  ggpubr::color_palette("jco") +
+  theme(axis.text.x = element_text(angle = 0)) +
+  labs(y = "Importance", x = "Features", 
+       title =  "Top 10 features of the Ensemble Model") +
+  coord_flip() 
+```
+
+***
+
+#### The Optimal Model
+
+The optimal model is an obvious decision. The stacked ensemble model with base learner kNN, Naive Bayes, and Neural Network does a more desirable job in classifying an individual's eating and physical activities into a BMI category of underweight, healthy, overweight, or obese on the test set. 
+
+```{r test_perf, eval = FALSE}
+test.p_dm = as.data.frame(lapply(test.p, as.numeric))
+EMdata_t = cbind(test.p_dm, train.r = test.r)
+# Get the predictions to calculate accuracy
+pred.t =  predict(en.model, newdata = EMdata_t)
+
+performance(pred.t, measures = ms, en.model) %>% 
+  kable(caption = 'Performance of the Ensemble', digits = 3L)
+```
+
+![](C:/Users/Deokinanan/Desktop/2019 -2021 CUNY SPS/SPRING 2021/DATA 622/Final Project/conmx.png)
+
+In terms of the confusion matrix, the results suggest that 80.6% of the predicted results seem to be correctly classified. Also, the Kappa statistic of 0.71 suggests that the overall accuracy of this model is better than the expected random chance classifier’s accuracy. The precision for each BMI level is also high for Obese at 90%, Underweight at 86%, and Overweight at 77%, while Health classification has a precision rate of 51%. Overall, this suggests that individuals belonging to an actual BMI level among all the levels predicted to be that particular level had little error. Moreover, the recall highlights that 89% of the Obese individual have been correctly classified accordingly, whereas 84% of the Underweight individuals have been correctly classified, 72% of the Overweight individuals have been correctly classified and 64% of the Health individuals have been correctly classified. In all, this model is capable of classifying an individual's eating and physical activities into one of the BMI categories. This is particularly true for those with habits the categorize them as being obese, whereas the model appears to have some difficulty in classifying healthy individuals. 
+
+### Conclusion
+
+This project set out to examine the existence of subgroups within underweight and obese individuals. For the underweight clusters, having a family history with overweight is common, similar to those obese. Snacking between meals, eating vegetables, and water and alcohol intake, all follow similar patterns with a majority of those obese as well. Cluster distinctions are thus mainly due to gender age, and some physical activities. As a result, the analysis presented in this study has identified 3 types of underweight individuals and 5 types of obese individuals. It should be noted that cluster analysis is a data-driven method, and therefore despite the stability of the clusters within this project, the results may not be generalized to other underweight and obese populations.
+
+Moreover, this project tried to examine if there is a type of exercise/physical activity or diet composition threshold that makes normal, underweight, and overweight/obese individuals different. It can be concluded that there is no difference in high caloric food consumption between those underweight with those healthy and overweight, but there is a difference in high caloric food intake between those underweight and those obese. There is also evidence that the frequency of physical activities between those underweight and those obese are statistically different. 
+
+Multiple models were built to better classify individuals’ BMI based on their eating and physical activities. Based on the test data, fitting a kNN model did exceptionally well in classifying individuals’ eating and physical habits into BMI levels, while a Naive Bayes and Neural Network model did not (kNN accuracy = 75.6%). To improve on this classification, a stacked ensemble model was built and resulted in better accuracy of 80.6% for correctly classifying cases. 
+
+In conclusion, this project was successful in analyzing the eating and physical activity habits of individuals based on their Body Mass Index. But the cluster analysis could use more advanced methodologies or more data for its investigation, which is beyond the scope of this course. Exploring the results for a different number of clusters showed that the patterns captured in the 5 clusters remained broadly consistent, suggesting it appropriate and reliable for this project. But considering that the number of clusters chosen for the obese group is somewhat arbitrary, it will affect the results that are reported. Therefore, future research should explore whether the clusters exist when using other measures of obesity, or algorithm metric, to explore their validity. 
+
+### Works Cited
+
+ 1. Castro, E. A., Carraça, E. V., Cupeiro, R., López-Plaza, B., Teixeira, P. J., González-Lamuño, D., & Peinado, A. B. (2020). The Effects of the Type of Exercise and Physical Activity on Eating Behavior and Body Composition in Overweight and Obese Subjects. Nutrients, 12(2), 557.
+ 
+ 2. Palechor, F. M., & de la Hoz Manotas, A. (2019). Dataset for estimation of obesity levels based on eating habits and physical condition in individuals from Colombia, Peru, and Mexico. Data in Brief, 104344.
+ 
+ 3. Green, M. A., Strong, M., Razak, F., Subramanian, S. V., Relton, C., & Bissell, P. (2016). Who are the obese? A cluster analysis exploring subgroups of the obese. Journal of public health (Oxford, England), 38(2), 258–264. https://doi.org/10.1093/pubmed/fdv040
+ 
+ 4. WHO. (2020). [Obesity and overweight.](!https://www.who.int/news-room/fact-sheets/detail/obesity-and-overweight#:~:text=Worldwide%20obesity%20has%20nearly%20tripled,%2C%20and%2013%25%20were%20obese)
+ 
+ 5. Herrera BM, Keildson S, Lindgren CM. Genetics and epigenetics of obesity external icon. Maturitas. 2011 May;69(1):41-9.
+ 
+ 6. Yanovski J. A. (2018). Obesity: Trends in underweight and obesity - scale of the problem. Nature reviews. Endocrinology, 14(1), 5–6. https://doi.org/10.1038/nrendo.2017.157
+ 
+### Code Appendix
+
+```{r setup2, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, eval=FALSE)
+```
+```{r loaddata}
+```
+```{r bmi}
+```
+```{r tragetviz}
+```
+```{r sumstat}
+```
+```{r outliers}
+```
+```{r grubbs}
+```
+```{r norm}
+```
+```{r normplot}
+```
+```{r homogeneity}
+```
+```{r levene}
+```
+```{r corrgram}
+```
+```{r corr_cat_t}
+```
+```{r corr_cat_g}
+```
+```{r remove_outliers}
+```
+```{r dummyVars}
+```
+```{r trainTestSplit}
+```
+```{r gower}
+```
+```{r pairs}
+```
+```{r sil_under}
+```
+```{r pam}
+```
+```{r under_p}
+```
+```{r under_plot}
+```
+```{r sil_obese}
+```
+```{r pam2}
+```
+```{r obese_p}
+```
+```{r obese_plot}
+```
+```{r kt_cal}
+```
+```{r dt_cal}
+```
+```{r kt_water}
+```
+```{r kt_physical}
+```
+```{r kt_tech}
+```
+```{r boruta}
+```
+```{r knn.model}
+```
+```{r knn.model.p}
+```
+```{r nb.model}
+```
+```{r nb.model.p}
+```
+```{r nn.model}
+```
+```{r nn.model.p}
+```
+```{r resample}
+```
+```{r compTable}
+```
+```{r ensemble,}
+```
+```{r ensemble_imp}
+```
+```{r em_plot}
+```
+```{r test_perf}
+```
